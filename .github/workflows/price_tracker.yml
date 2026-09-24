@@ -1,11 +1,9 @@
 name: iPhone 16e Price Tracker
 
 on:
-  schedule:
-    # UTC時間で設定 (日本時間 8:08, 12:08, 18:18)
-    - cron: '8 23 * * *'
-    - cron: '8 3 * * *'
-    - cron: '18 9 * * *'
+schedule:
+    # 毎時08分に実行（1時間に1回チェックします）
+    - cron: '8 * * * *'
   workflow_dispatch:
 
 jobs:
