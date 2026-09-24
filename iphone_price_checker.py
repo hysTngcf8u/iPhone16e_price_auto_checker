@@ -9,9 +9,8 @@ import requests
 CSV_FILE = "prices.csv"
 CHART_FILE = "price_trend_chart.png"
 
-# Discord Webhook URL（環境変数から取得）
+# Discord Webhook URL
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-
 
 # --- 各サイトの価格取得関数 ---
 def get_iosys_price():
@@ -21,16 +20,12 @@ def get_iosys_price():
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             prices = re.findall(r"￥([0-9,]+)", res.text)
-            clean_prices = [
-                int(p.replace(",", ""))
-                for p in prices
-                if int(p.replace(",", "")) > 50000
-            ]
+            clean_prices = [int(p.replace(",", "")) for p in prices if int(p.replace(",", "")) > 50000]
             if clean_prices:
                 return min(clean_prices)
     except Exception as e:
         print(f"イオシス取得エラー: {e}")
-    return 92800  # エラー時の基準値
+    return 92800
 
 
 def get_amazon_price():
@@ -40,16 +35,12 @@ def get_amazon_price():
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             prices = re.findall(r"￥([0-9,]+)", res.text)
-            clean_prices = [
-                int(p.replace(",", ""))
-                for p in prices
-                if int(p.replace(",", "")) > 50000
-            ]
+            clean_prices = [int(p.replace(",", "")) for p in prices if int(p.replace(",", "")) > 50000]
             if clean_prices:
                 return min(clean_prices)
     except Exception as e:
         print(f"Amazon取得エラー: {e}")
-    return 87900  # エラー時の基準値
+    return 87900
 
 
 def get_backmarket_price():
@@ -59,16 +50,38 @@ def get_backmarket_price():
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             prices = re.findall(r"([0-9,]+)\s?円", res.text)
-            clean_prices = [
-                int(p.replace(",", ""))
-                for p in prices
-                if int(p.replace(",", "")) > 50000
-            ]
+            clean_prices = [int(p.replace(",", "")) for p in prices if int(p.replace(",", "")) > 50000]
             if clean_prices:
                 return min(clean_prices)
     except Exception as e:
         print(f"BackMarket取得エラー: {e}")
-    return 80100  # エラー時の基準値
+    return 80100
+
+
+def get_apple_refurbished_stock():
+    # Appleの型番規則（新品Mから始まり、整備済品はFから始まる）に基づくURL
+    urls = {
+        "ホワイト": "https://www.apple.com/jp/shop/product/FD1R4J/A",
+        "ブラック": "https://www.apple.com/jp/shop/product/FD1Q4J/A"
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "ja-JP,ja;q=0.9"
+    }
+    available_items = []
+
+    for color, url in urls.items():
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            # Appleは在庫切れ時にURLを一覧ページにリダイレクトするため、URLが変わっていないか確認
+            if res.status_code == 200 and "product/F" in res.url.upper():
+                # HTML内に「バッグに追加」ボタンが存在すれば購入可能と判定
+                if "バッグに追加" in res.text:
+                    available_items.append(f"[{color}]({url})")
+        except Exception as e:
+            print(f"Apple整備済({color}) 取得エラー: {e}")
+
+    return available_items
 
 
 # --- メイン処理 ---
@@ -80,14 +93,11 @@ def main():
     amazon = get_amazon_price()
     iosys = get_iosys_price()
     backmarket = get_backmarket_price()
+    apple_stock = get_apple_refurbished_stock()
 
-    # 日本時間（UTC+9）の現在時刻を取得
-    now = datetime.datetime.now(
-        datetime.timezone(datetime.timedelta(hours=9))
-    )
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     time_str = now.strftime("%Y-%m-%d %H:%M")
 
-    # 1. CSVへの保存・追記
     file_exists = os.path.isfile(CSV_FILE)
     with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -95,9 +105,6 @@ def main():
             writer.writerow(["Date", "Amazon", "Iosys", "BackMarket"])
         writer.writerow([time_str, amazon, iosys, backmarket])
 
-    print(f"CSVを更新しました: {time_str}")
-
-    # 2. 過去データから推移グラフを作成
     dates, amazon_list, iosys_list, backmarket_list = [], [], [], []
     with open(CSV_FILE, mode="r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -111,9 +118,7 @@ def main():
     plt.figure(figsize=(10, 5))
     plt.plot(dates, amazon_list, label="Amazon", marker="o", color="#FF9900")
     plt.plot(dates, iosys_list, label="Iosys", marker="s", color="#004080")
-    plt.plot(
-        dates, backmarket_list, label="BackMarket", marker="^", color="#00D1B2"
-    )
+    plt.plot(dates, backmarket_list, label="BackMarket", marker="^", color="#00D1B2")
 
     plt.title("iPhone 16e 128GB Price Trend")
     plt.xlabel("Date & Time")
@@ -125,9 +130,15 @@ def main():
     plt.savefig(CHART_FILE)
     plt.close()
 
-    # 3. Discordへ通知送信
+    # Apple在庫状況のメッセージ組み立て
+    if apple_stock:
+        apple_msg = "🚨 **【入荷速報】Apple公式 整備済製品の在庫が復活しています！！**\n" + "\n".join([f"・{item} が購入可能です！" for item in apple_stock])
+    else:
+        apple_msg = "・Apple公式 整備済: 在庫切れ"
+
     msg = (
-        f"📱 **iPhone 16e (128GB) 価格レポート** ({time_str})\n"
+        f"📱 **iPhone 16e (128GB) 価格レポート** ({time_str})\n\n"
+        f"{apple_msg}\n\n"
         f"・Back Market: ¥{backmarket:,}\n"
         f"・Amazon整備品: ¥{amazon:,}\n"
         f"・イオシス: ¥{iosys:,}"
@@ -137,12 +148,6 @@ def main():
         payload = {"content": msg}
         files = {"file": (CHART_FILE, f, "image/png")}
         res = requests.post(WEBHOOK_URL, data=payload, files=files)
-
-    if res.status_code in [200, 204]:
-        print("Discordへの通知に成功しました！")
-    else:
-        print(f"Discord通知失敗: {res.status_code} - {res.text}")
-
 
 if __name__ == "__main__":
     main()
