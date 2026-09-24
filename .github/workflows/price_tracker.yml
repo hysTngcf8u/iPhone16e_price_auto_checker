@@ -1,9 +1,10 @@
 name: iPhone 16e Price Tracker
 
 on:
-schedule:
+  schedule:
     # 毎時08分に実行（1時間に1回チェックします）
     - cron: '8 * * * *'
+
   workflow_dispatch:
 
 jobs:
